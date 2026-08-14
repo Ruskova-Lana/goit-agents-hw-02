@@ -1,0 +1,192 @@
+{
+  "total_steps": 12,
+  "total_time_ms": 68607,
+  "trajectory": [
+    {
+      "step_number": 1,
+      "node_name": "agent",
+      "input": "content='Я їду удвох на 5 днів. Щоденний бюджет на одну людину — 80 євро. Порахуй загальний бюджет подорожі.' additional_kwargs={} response_metadata={}",
+      "output": "[]",
+      "tool_calls": [
+        {
+          "name": "calculate_trip_budget",
+          "args": {
+            "days": 5,
+            "daily_budget": 80,
+            "travelers": 2
+          },
+          "id": "call_44149",
+          "type": "tool_call"
+        }
+      ],
+      "timestamp": "2026-08-14T06:04:55.199554+00:00",
+      "duration_ms": 1481,
+      "elapsed_ms": 1493
+    },
+    {
+      "step_number": 2,
+      "node_name": "tools",
+      "input": "[{'name': 'calculate_trip_budget', 'args': {'days': 5, 'daily_budget': 80, 'travelers': 2}, 'id': 'call_44149', 'type': 'tool_call'}]",
+      "output": "[ToolMessage(content='Орієнтовний бюджет подорожі: €800.00 для 2 осіб на 5 днів.', name='calculate_trip_budget', tool_call_id='call_44149')]",
+      "tool_calls": [
+        {
+          "name": "calculate_trip_budget",
+          "args": {
+            "days": 5,
+            "daily_budget": 80,
+            "travelers": 2
+          },
+          "id": "call_44149",
+          "type": "tool_call"
+        }
+      ],
+      "timestamp": "2026-08-14T06:04:55.203599+00:00",
+      "duration_ms": 2,
+      "elapsed_ms": 1497
+    },
+    {
+      "step_number": 3,
+      "node_name": "agent",
+      "input": "content='Орієнтовний бюджет подорожі: €800.00 для 2 осіб на 5 днів.' name='calculate_trip_budget' tool_call_id='call_44149'",
+      "output": "[{'type': 'text', 'text': 'Загальний бюджет вашої подорожі на двох на 5 днів (при щоденному бюджеті 80 євро на людину) становитиме приблизно **800 євро**.', 'extras': {'signature': 'EmgKZgERTTIPRgEqya0oYz7XV7XwSbOkRG+nIyBJ2Fs3wUL7S3g/RMKny3xcPoA1IGBeUOVD88bus4I8YP1zIHUZ5w/dJ1rYzG2mBOdSLMdSw4tzP17FAbqEgkBzKhTExE5Xcaqe39A1Ng=='}}]",
+      "tool_calls": [],
+      "timestamp": "2026-08-14T06:04:56.368653+00:00",
+      "duration_ms": 1164,
+      "elapsed_ms": 2661
+    },
+    {
+      "step_number": 4,
+      "node_name": "formatter",
+      "input": "[{'type': 'text', 'text': 'Загальний бюджет вашої подорожі на двох на 5 днів (при щоденному бюджеті 80 євро на людину) становитиме приблизно **800 євро**.', 'extras': {'signature': 'EmgKZgERTTIPRgEqya0oYz7XV7XwSbOkRG+nIyBJ2Fs3wUL7S3g/RMKny3xcPoA1IGBeUOVD88bus4I8YP1zIHUZ5w/dJ1rYzG2mBOdSLMdSw4tzP17FAbqEgkBzKhTExE5Xcaqe39A1Ng=='}}]",
+      "output": "{'answer': 'Загальний бюджет вашої подорожі на двох на 5 днів (при щоденному бюджеті 80 євро на людину) становитиме приблизно **800 євро**.', 'confidence': 1.0, 'sources': ['calculate_trip_budget']}",
+      "tool_calls": [],
+      "timestamp": "2026-08-14T06:04:59.093518+00:00",
+      "duration_ms": 2723,
+      "elapsed_ms": 5386
+    },
+    {
+      "step_number": 5,
+      "node_name": "agent",
+      "input": "content='Я хочу забронювати 2 номери на 4 ночі. Один номер коштує 120 євро за ніч. Скільки коштуватиме проживання?' additional_kwargs={} response_metadata={}",
+      "output": "[]",
+      "tool_calls": [
+        {
+          "name": "estimate_hotel_cost",
+          "args": {
+            "price_per_night": 120,
+            "rooms": 2,
+            "nights": 4
+          },
+          "id": "call_466046",
+          "type": "tool_call"
+        }
+      ],
+      "timestamp": "2026-08-14T06:05:00.277710+00:00",
+      "duration_ms": 1181,
+      "elapsed_ms": 6570
+    },
+    {
+      "step_number": 6,
+      "node_name": "tools",
+      "input": "[{'name': 'estimate_hotel_cost', 'args': {'price_per_night': 120, 'rooms': 2, 'nights': 4}, 'id': 'call_466046', 'type': 'tool_call'}]",
+      "output": "[ToolMessage(content='Орієнтовна вартість готелю: €960.00 за 2 номер(и) на 4 ночей.', name='estimate_hotel_cost', tool_call_id='call_466046')]",
+      "tool_calls": [
+        {
+          "name": "estimate_hotel_cost",
+          "args": {
+            "price_per_night": 120,
+            "rooms": 2,
+            "nights": 4
+          },
+          "id": "call_466046",
+          "type": "tool_call"
+        }
+      ],
+      "timestamp": "2026-08-14T06:05:00.280422+00:00",
+      "duration_ms": 1,
+      "elapsed_ms": 6572
+    },
+    {
+      "step_number": 7,
+      "node_name": "agent",
+      "input": "content='Орієнтовна вартість готелю: €960.00 за 2 номер(и) на 4 ночей.' name='estimate_hotel_cost' tool_call_id='call_466046'",
+      "output": "[{'type': 'text', 'text': 'Проживання у 2 номерах на 4 ночі за ціною 120 євро за ніч коштуватиме приблизно **960 євро**.', 'extras': {'signature': 'EmgKZgERTTIPexePaaMK1XQBgb0y8QixK9wL5Hcf88g+OwT7IQy+eo4ALqhkkIMxVX3MwqvnrEEWGiSpwa5hud5rn8yCwV4kaGPM5n7xgXHcmeGYvJxWEfRYnpwUoXaOV80+JI1zOxsPiw=='}}]",
+      "tool_calls": [],
+      "timestamp": "2026-08-14T06:05:01.461933+00:00",
+      "duration_ms": 1180,
+      "elapsed_ms": 7754
+    },
+    {
+      "step_number": 8,
+      "node_name": "formatter",
+      "input": "[{'type': 'text', 'text': 'Проживання у 2 номерах на 4 ночі за ціною 120 євро за ніч коштуватиме приблизно **960 євро**.', 'extras': {'signature': 'EmgKZgERTTIPexePaaMK1XQBgb0y8QixK9wL5Hcf88g+OwT7IQy+eo4ALqhkkIMxVX3MwqvnrEEWGiSpwa5hud5rn8yCwV4kaGPM5n7xgXHcmeGYvJxWEfRYnpwUoXaOV80+JI1zOxsPiw=='}}]",
+      "output": "{'answer': 'Проживання у 2 номерах на 4 ночі за ціною 120 євро за ніч коштуватиме приблизно **960 євро**.', 'confidence': 1.0, 'sources': ['estimate_hotel_cost']}",
+      "tool_calls": [],
+      "timestamp": "2026-08-14T06:05:03.727879+00:00",
+      "duration_ms": 2264,
+      "elapsed_ms": 10019
+    },
+    {
+      "step_number": 9,
+      "node_name": "agent",
+      "input": "content='Мені потрібно подолати 500 км. Подорожують 2 людини. Для мене найважливіша швидкість. Який транспорт краще обрати?' additional_kwargs={} response_metadata={}",
+      "output": "[]",
+      "tool_calls": [
+        {
+          "name": "recommend_transport",
+          "args": {
+            "priority": "fast",
+            "distance_km": 500,
+            "travelers": 2
+          },
+          "id": "call_413939",
+          "type": "tool_call"
+        }
+      ],
+      "timestamp": "2026-08-14T06:05:40.359450+00:00",
+      "duration_ms": 36620,
+      "elapsed_ms": 46642
+    },
+    {
+      "step_number": 10,
+      "node_name": "tools",
+      "input": "[{'name': 'recommend_transport', 'args': {'priority': 'fast', 'distance_km': 500, 'travelers': 2}, 'id': 'call_413939', 'type': 'tool_call'}]",
+      "output": "[ToolMessage(content='Рекомендований транспорт: літак. Відстань: 500 км, мандрівників: 2, пріоритет: fast.', name='recommend_transport', tool_call_id='call_413939')]",
+      "tool_calls": [
+        {
+          "name": "recommend_transport",
+          "args": {
+            "priority": "fast",
+            "distance_km": 500,
+            "travelers": 2
+          },
+          "id": "call_413939",
+          "type": "tool_call"
+        }
+      ],
+      "timestamp": "2026-08-14T06:05:40.361859+00:00",
+      "duration_ms": 1,
+      "elapsed_ms": 46644
+    },
+    {
+      "step_number": 11,
+      "node_name": "agent",
+      "input": "content='Рекомендований транспорт: літак. Відстань: 500 км, мандрівників: 2, пріоритет: fast.' name='recommend_transport' tool_call_id='call_413939'",
+      "output": "[{'type': 'text', 'text': 'Для подорожі на відстань 500 км для двох людей, де головним пріоритетом є швидкість, найкраще обрати **літак**. Це дозволить вам дістатися до місця призначення максимально швидко.', 'extras': {'signature': 'EmgKZgERTTIPTqI3hJffP+mi14xenvD918O7TpGDtjd2nWCB/HpkT00HnsY4CSmxDns6m71L7c9AZVk3CKtzNfUww7XyyBei8eBXzsQxcSKJD8US2KPotMb7N+S6LOiELt1pmpkIkGFzxw=='}}]",
+      "tool_calls": [],
+      "timestamp": "2026-08-14T06:05:59.323109+00:00",
+      "duration_ms": 18956,
+      "elapsed_ms": 65601
+    },
+    {
+      "step_number": 12,
+      "node_name": "formatter",
+      "input": "[{'type': 'text', 'text': 'Для подорожі на відстань 500 км для двох людей, де головним пріоритетом є швидкість, найкраще обрати **літак**. Це дозволить вам дістатися до місця призначення максимально швидко.', 'extras': {'signature': 'EmgKZgERTTIPTqI3hJffP+mi14xenvD918O7TpGDtjd2nWCB/HpkT00HnsY4CSmxDns6m71L7c9AZVk3CKtzNfUww7XyyBei8eBXzsQxcSKJD8US2KPotMb7N+S6LOiELt1pmpkIkGFzxw=='}}]",
+      "output": "{'answer': 'Для подорожі на відстань 500 км для двох людей, де головним пріоритетом є швидкість, найкраще обрати **літак**. Це дозволить вам дістатися до місця призначення максимально швидко.', 'confidence': 1.0, 'sources': ['recommend_transport']}",
+      "tool_calls": [],
+      "timestamp": "2026-08-14T06:06:02.329286+00:00",
+      "duration_ms": 3004,
+      "elapsed_ms": 68606
+    }
+  ]
+}
