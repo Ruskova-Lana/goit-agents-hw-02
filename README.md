@@ -1,384 +1,252 @@
-# ReAct-агент для планування подорожей
+# Plan-and-Execute агент для планування подорожей
 
 ## 1. Опис проєкту
 
-У проєкті реалізовано ReAct-агента для планування подорожей на основі **LangGraph** та Google Gemini API. Агент аналізує запит користувача, самостійно визначає необхідні tools, виконує їх та використовує отримані результати для формування фінальної відповіді. Для роботи з LLM використовується Google Gemini Flash; у поточній конфігурації застосовується модель `gemini-3-flash-preview`. Агент підтримує Pydantic v2 валідацію, structured output, захист від зациклення, обмеження кількості кроків і часу виконання, а також JSON-логування повної траєкторії.
+Туристичний AI-агент, побудований за архітектурою **Plan-and-Execute** на базі LangGraph.
+Замість того щоб на кожному кроці заново вирішувати, що робити (як у ReAct), агент спочатку
+будує повний план виконання задачі, а потім послідовно виконує його кроки, за потреби
+коригуючи план (**replanning**) на основі проміжних результатів.
 
-## 2. Доменна задача
+Проєкт демонструє чотири окремі можливості:
 
-* **Домен:** подорожі.
-* **Що вирішує агент:** допомагає користувачу оцінити бюджет подорожі, розрахувати вартість проживання та підібрати транспорт залежно від параметрів поїздки.
-* **Інструменти (tools):**
+1. **Plan-and-Execute** — planner будує план, executor виконує кроки, replanner вирішує
+   `continue` / `replan` / `finish`.
+2. **Checkpointer (persistence)** — стан графа зберігається у SQLite (`agent_state.db`) і
+   переживає перезапуск Python-процесу.
+3. **Agentic RAG** — агент сам вирішує, коли йому потрібна довідкова інформація з
+   внутрішньої бази знань (ChromaDB), а коли достатньо звичайних tools.
+4. **Human-in-the-Loop (HITL)** — ризикові дії (бронювання готелю) виконуються лише після
+   явного підтвердження людини через `interrupt()` / `Command(resume=...)`.
 
-  * `calculate_trip_budget` — розраховує загальний бюджет подорожі на основі кількості мандрівників, кількості днів та щоденного бюджету на одну людину.
-  * `estimate_hotel_cost` — розраховує загальну вартість проживання на основі кількості ночей, вартості номера та кількості номерів.
-  * `recommend_transport` — рекомендує транспорт залежно від відстані, кількості мандрівників та пріоритету `cheap`, `fast` або `balanced`.
+## 2. Архітектура
 
-Кожен tool має окрему Pydantic v2 модель параметрів, `Field` з описом, `field_validator` для перевірки вхідних значень та docstring, який допомагає LLM визначати призначення інструмента.
-
-## 3. Архітектура
-
-Агент побудований за допомогою `LangGraph StateGraph`.
-
-Основний ReAct-цикл:
-
-```text
-START
-  ↓
-agent
-  ↓
-tool_calls?
-  │
-  ├── YES → tools
-  │           ↓
-  │         agent
-  │           ↓
-  │          ...
-  │
-  └── NO → formatter
-              ↓
-             END
+```
+START → planner → executor ─┬─→ approval ─────┐
+                             ├─→ checkpoint_pause ─┤
+                             └─→ replanner ◄───────┘
+                                    │
+                        continue/replan → executor
+                        finish        → END
 ```
 
-Вузол `agent` використовує LLM з `bind_tools()` та вирішує, чи необхідно викликати один або декілька tools. Вузол `tools` виконує tool calls, після чого результат повертається до `agent`. Цикл продовжується, доки модель не сформує відповідь без нового tool call.
+* **planner** — на основі запиту користувача формує структурований `Plan`
+  (`goal` + список кроків) через `with_structured_output`.
+* **executor** — виконує рівно один крок поточного плану: обирає tool
+  (`bind_tools`), викликає його або, якщо tool ризиковий, зупиняється перед
+  виконанням.
+* **approval** — `interrupt()`-вузол, що очікує рішення людини:
+  `approve` / `reject` / `edit` — для tools зі списку `RISKY_TOOLS`.
+* **checkpoint_pause** — навмисний `interrupt()` після першого кроку, що
+  демонструє відновлення стану з SQLite в новому процесі.
+* **replanner** — після кожного кроку вирішує: продовжити виконання поточного
+  плану (`continue`), змінити залишкові кроки (`replan`) чи завершити
+  (`finish`).
 
-Після завершення ReAct-циклу вузол `formatter` використовує structured output та Pydantic-модель:
+Стан графа (`PlanExecuteState`) зберігається через `SqliteSaver` у файл
+`agent_state.db`, тому кожен `thread_id` має власну, незалежну історію.
+
+## 3. Структура файлів
+
+```
+tools.py              # Звичайні tools з Pydantic-схемами та валідацією
+                       # (calculate_trip_budget, estimate_hotel_cost, recommend_transport)
+knowledge.py           # ChromaDB + tool search_knowledge (Agentic RAG)
+hitl.py                # Ризиковий tool book_hotel + Pydantic-схема
+plan_execute.py        # LangGraph: planner + executor + replanner + HITL + CLI
+agent_state.db         # SQLite зі збереженим станом (генерується автоматично)
+chroma_db/             # Локальна векторна база ChromaDB (генерується автоматично)
+requirements.txt       # Залежності Python
+README.md              # Цей файл
+```
+
+## 4. Встановлення
+
+```bash
+pip install -r requirements.txt
+```
+
+Створіть файл `.env` у корені проєкту:
+
+```
+GOOGLE_API_KEY=ваш_ключ_google_generative_ai
+```
+
+Модель за замовчуванням — `gemini-3.5-flash-lite` (задається в `plan_execute.py`).
+
+## 5. Інструкція запуску
+
+Усі сценарії запускаються через `plan_execute.py`. Список команд також
+доступний за допомогою `python plan_execute.py` (без аргументів).
+
+### Завдання 1 — Plan-and-Execute
+
+```bash
+python plan_execute.py simple    # один крок плану
+python plan_execute.py medium    # кілька tools
+python plan_execute.py complex   # повний сценарій подорожі
+python plan_execute.py demo      # усі три приклади підряд
+```
+
+### Завдання 2 — Checkpointer (persistence)
+
+```bash
+python plan_execute.py start     # запускає workflow і зупиняє його
+                                  # після першого виконаного кроку
+python plan_execute.py resume    # у НОВОМУ Python-процесі відновлює
+                                  # той самий thread_id з agent_state.db
+python plan_execute.py threads   # показує, що різні thread_id мають
+                                  # незалежний стан
+```
+
+### Завдання 3 — Agentic RAG
+
+```bash
+python plan_execute.py rag
+```
+
+Запускає три приклади: запит, де `search_knowledge` не потрібен; запит, де
+він потрібен; і запит, що поєднує звичайний tool із пошуком у базі знань.
+Вибір tool повністю залишається за LLM.
+
+### Завдання 4 — Human-in-the-Loop
+
+```bash
+python plan_execute.py hitl hitl-approve-001
+python plan_execute.py approve hitl-approve-001
+
+python plan_execute.py hitl hitl-reject-001
+python plan_execute.py reject hitl-reject-001
+
+python plan_execute.py hitl hitl-edit-001
+python plan_execute.py edit hitl-edit-001
+```
+
+Кожен сценарій запускається з власним `thread_id`: перша команда доводить
+graph до `interrupt()` перед `book_hotel`, друга — відновлює виконання з
+відповідним рішенням людини (підтвердити, відхилити або змінити параметри
+бронювання).
+
+## 6. Tools
+
+| Tool | Призначення | Ризиковий |
+|---|---|---|
+| `calculate_trip_budget` | Розрахунок загального бюджету подорожі | ні |
+| `estimate_hotel_cost` | Розрахунок вартості проживання | ні |
+| `recommend_transport` | Рекомендація транспорту за відстанню та пріоритетом | ні |
+| `search_knowledge` | Agentic RAG-пошук у ChromaDB (страхування, документи, багаж, правила) | ні |
+| `book_hotel` | Фактичне бронювання готелю | **так — потребує HITL approval** |
+
+Усі tools мають Pydantic `args_schema` з валідаторами (діапазони значень,
+формат дати, довжина рядків тощо). `travelers` (кількість мандрівників)
+валідується спільним `Annotated`-типом `TravelersCount`, який використовують
+одразу `TripBudgetInput` і `TransportInput`, щоб не дублювати логіку.
+
+## 7. База знань (ChromaDB)
+
+`knowledge.py` створює локальну, персистентну колекцію ChromaDB
+(`./chroma_db`, колекція `travel_knowledge`) і заповнює її 10 короткими
+документами доменної області "подорожі". Кожен документ має `id`, `title` та
+текст; `initialize_knowledge_base()` додає лише ті документи, яких ще немає
+в колекції, тому повторний імпорт `knowledge.py` не створює дублікатів.
+
+| id | title |
+|---|---|
+| travel-001 | Travel insurance |
+| travel-002 | Airport arrival |
+| travel-003 | Cabin baggage |
+| travel-004 | Hotel check-in |
+| travel-005 | Emergency budget |
+| travel-006 | Train travel |
+| travel-007 | Flight travel |
+| travel-008 | Travel documents |
+| travel-009 | Hotel cancellation |
+| travel-010 | Local public transport |
+
+`search_knowledge` (Pydantic-схема `KnowledgeSearchInput`: `query` мінімум
+3 символи, `top_k` від 1 до 5) виконує `collection.query()` за
+семантичною близькістю і повертає `top_k` найрелевантніших фрагментів у
+форматі `"{title}: {text}"`. Executor викликає цей tool лише тоді, коли
+LLM сам вирішує, що для поточного кроку плану потрібна довідкова
+інформація, а не розрахунок (детальніше — розділ 9).
+
+## 8. Ризиковий tool та HITL flow
+
+`book_hotel` (`hitl.py`) — єдиний tool у списку `RISKY_TOOLS`
+(`plan_execute.py`). Коли executor обирає ризиковий tool, він **не викликає
+його одразу**, а зберігає `pending_tool_call` у стані графа і передає
+керування вузлу `approval`.
+
+Вузол `approval` викликає `interrupt()` з деталями дії:
 
 ```python
-class FinalAnswer(BaseModel):
-    answer: str
-    confidence: float
-    sources: list[str]
+{
+    "type": "approval_required",
+    "message": "Потрібне підтвердження ризикової дії.",
+    "tool": "book_hotel",
+    "args": {"hotel_name": "...", "check_in": "YYYY-MM-DD", "nights": 4, "total_cost": 400},
+    "allowed_actions": ["approve", "reject", "edit"],
+    "instructions": {...},
+}
 ```
 
-Для захисту агента застосовано:
-
-* `max_steps = 10` — максимальна кількість LLM-ітерацій;
-* `timeout = 120 секунд` — максимальний загальний час виконання;
-* `LoopDetector(max_repeats=3)` — зупиняє агента, якщо той самий tool з однаковими аргументами викликається 3 рази поспіль;
-* додатковий `recursion_limit` LangGraph.
-
-Повна траєкторія виконання записується за допомогою `TrajectoryLogger`.
-
-## 4. Інструкція запуску
-
-1. Клонувати репозиторій:
-
-```bash
-git clone https://github.com/Ruskova-Lana/goit-agents-hw-01.git
-```
-
-2. Перейти в директорію:
-
-```bash
-cd goit-agents-hw-01
-```
-
-3. Встановити залежності:
-
-```bash
-python -m pip install -r requirements.txt
-```
-
-4. Створити файл `.env` у корені проєкту та додати Google Gemini API key:
-
-```text
-GOOGLE_API_KEY=your_google_api_key
-```
-
-5. Запустити агента:
-
-```bash
-python agent.py
-```
-
-Після запуску автоматично генерується файл:
-
-```text
-trajectory.json
-```
-
-6. Запустити всі тест-кейси:
-
-```bash
-python test_runner.py
-```
-
-Після тестування автоматично генерується:
-
-```text
-test_results.json
-```
-
-## 5. Результати тестування
-
-Підсумкова таблиця за `test_results.json`:
-
-| Test ID | Складність | Кроків | Tool calls                                             | Час, мс | Статус    |
-| ------- | ---------- | -----: | ------------------------------------------------------ | ------: | --------- |
-| TC-001  | simple     |      2 | `calculate_trip_budget` × 1                            |  54 717 | ✅ success |
-| TC-002  | medium     |      2 | `calculate_trip_budget` × 1, `estimate_hotel_cost` × 1 |  11 501 | ✅ success |
-| TC-003  | medium     |      2 | `recommend_transport` × 1, `calculate_trip_budget` × 1 |   7 242 | ✅ success |
-| TC-004  | complex    |     -1 | tool calls не зафіксовано через API error              |  34 447 | ❌ error   |
-
-Загальний результат:
-
-```text
-Total tests: 4
-Successful: 3
-Stopped: 0
-Errors: 1
-```
-
-### TC-001 — simple
-
-Запит вимагав розрахувати бюджет подорожі для двох людей на 5 днів при щоденному бюджеті €80 на одну людину.
-
-Очікуваний результат:
-
-```text
-2 × 5 × 80 = €800
-```
-
-Агент використав:
-
-```text
-calculate_trip_budget
-```
-
-та правильно повернув результат €800.
-
-### TC-002 — medium
-
-Запит вимагав виконати два окремі розрахунки:
-
-* бюджет подорожі;
-* вартість готелю.
-
-Агент використав:
-
-```text
-calculate_trip_budget
-estimate_hotel_cost
-```
-
-Результати:
-
-```text
-бюджет подорожі = €560
-вартість готелю = €400
-```
-
-Обидва результати відповідають очікуваним.
-
-### TC-003 — medium
-
-Запит вимагав:
-
-* рекомендувати транспорт для відстані 500 км з пріоритетом швидкості;
-* розрахувати бюджет подорожі.
-
-Агент використав:
-
-```text
-recommend_transport
-calculate_trip_budget
-```
-
-Було рекомендовано літак, а бюджет правильно розраховано як €900.
-
-### TC-004 — complex
-
-Складний запит передбачав використання всіх трьох tools:
-
-```text
-recommend_transport
-calculate_trip_budget
-estimate_hotel_cost
-```
-
-Очікуваний результат:
-
-```text
-транспорт = літак
-бюджет подорожі = €1050
-вартість готелю = €660
-```
-
-Проте виконання було перервано помилкою Gemini API:
-
-```text
-429 RESOURCE_EXHAUSTED
-```
-
-Тому тест завершився зі статусом `error` до отримання повної відповіді.
-
-## 6. Аналіз результатів
-
-### Чи правильно агент обирав tools?
-
-У всіх успішно завершених тестах агент правильно обрав tools відповідно до змісту запиту.
-
-У `TC-001` потрібно було виконати один розрахунок бюджету, тому агент використав тільки `calculate_trip_budget`.
-
-У `TC-002` користувач одночасно попросив розрахувати бюджет подорожі та готель. Агент правильно визначив необхідність використати два різних tools: `calculate_trip_budget` та `estimate_hotel_cost`.
-
-У `TC-003` агент також правильно розділив задачу на дві частини: вибір транспорту та розрахунок бюджету. Для цього були використані `recommend_transport` і `calculate_trip_budget`.
-
-Таким чином, для всіх тестів, де виконання успішно завершилося, помилок у виборі tools не виявлено.
-
-### Де агент помилявся і чому?
-
-У `TC-001`, `TC-002` та `TC-003` логічних помилок агента не виявлено. Результати tools відповідали очікуваним значенням.
-
-Єдиним невдалим тестом став `TC-004`. Він завершився через:
-
-```text
-429 RESOURCE_EXHAUSTED
-```
-
-Це обмеження Google Gemini API, а не помилка логіки LangGraph або неправильний вибір tool. Через API error виконання припинилося до формування фінального результату.
-
-Тому `TC-004` слід розглядати як **infrastructure/API failure**, а не як помилку reasoning або tool selection агента.
-
-У trajectory успішних тестів не спостерігалося повторних безпідставних tool calls, неправильних аргументів або зациклення.
-
-### Кроки: simple vs complex
-
-Простий `TC-001` потребував:
-
-```text
-2 LLM-кроки
-```
-
-Середні `TC-002` та `TC-003`, незважаючи на використання вже двох tools, також потребували:
-
-```text
-2 LLM-кроки
-```
-
-Це пояснюється тим, що LLM може створити декілька tool calls під час однієї ітерації.
-
-Наприклад:
-
-```text
-LLM step 1
-   ↓
-calculate_trip_budget
-estimate_hotel_cost
-   ↓
-LLM step 2
-   ↓
-final answer
-```
-
-Отже, кількість LLM-кроків не має прямої лінійної залежності від кількості tools.
-
-Для `TC-004` коректно проаналізувати кількість кроків неможливо, оскільки тест було перервано зовнішньою API-помилкою.
-
-### Чи досягав агент max_steps або timeout?
-
-Ні. у жодному тесті не було зафіксовано:
-
-```text
-max_steps_reached = true
-```
-
-або:
-
-```text
-timeout_reached = true
-```
-
-Успішні тест-кейси завершувалися за 2 LLM-кроки при встановленому:
-
-```text
-MAX_STEPS = 10
-```
-
-Тобто вони використовували лише 20% доступного ліміту.
-
-Також не було виявлено зациклення:
-
-```text
-loop_detected = false
-```
-
-`TC-004` також не досягнув `max_steps` або timeout — виконання було припинено раніше через помилку Gemini API.
-
-### Залежність часу виконання від складності
-
-Фактичний час виконання:
-
-```text
-TC-001 simple  → 54.7 с
-TC-002 medium  → 11.5 с
-TC-003 medium  → 7.2 с
-TC-004 complex → 34.4 с до API error
-```
-
-У цьому наборі тестів **не спостерігається прямої залежності між складністю запиту та часом виконання**.
-
-Найпростіший тест `TC-001` виконувався довше за обидва medium-тести. Це показує, що загальна latency залежить не тільки від кількості tools або складності запиту.
-
-На час виконання також впливають:
-
-* latency Google Gemini API;
-* мережеві затримки;
-* поточне навантаження API;
-* час генерації відповіді;
-* окремий LLM-виклик у `formatter` для structured output.
-
-Через невелику кількість тест-кейсів робити статистичний висновок про пряму залежність latency від complexity недоцільно.
-
-### Випадки, коли агент НЕ використав tool, хоч мав би
-
-Серед успішно виконаних тестів таких випадків не було.
-
-У `TC-001`, `TC-002` та `TC-003` список фактичних tool calls відповідав очікуваному.
-
-У `TC-004` у результатах tool calls не зафіксовано, хоча запит вимагав використання всіх трьох tools. Однак виконання завершилося через `429 RESOURCE_EXHAUSTED`, тому цей випадок не можна інтерпретувати як свідоме рішення агента не використовувати tool.
-
-Таким чином, у тестах не виявлено підтвердженого випадку, коли агент міг виконати запит, але необґрунтовано вирішив не використовувати необхідний tool.
-
-## 7. Висновки та обмеження
-
-### Що працює добре
-
-* Агент правильно визначає необхідні tools для різних типів travel-запитів.
-* Pydantic v2 забезпечує валідацію вхідних параметрів.
-* LangGraph забезпечує керований цикл `LLM → tools → LLM`.
-* Агент може викликати декілька tools в межах одного LLM-кроку.
-* Structured output забезпечує стабільний формат фінальної відповіді.
-* Реалізовано `max_steps`, timeout та loop detection.
-* Повна траєкторія виконання записується у JSON.
-* Test runner автоматично формує структурований `test_results.json`.
-
-### Що можна покращити
-
-* Додати retry з exponential backoff для `429 RESOURCE_EXHAUSTED`.
-* Повторити `TC-004` після відновлення API quota.
-* Додати окремі тест-кейси, які навмисно перевіряють `MAX_STEPS`, timeout та `LoopDetector`.
-* Розширити evaluation set більшою кількістю простих, середніх та складних запитів.
-* Окремо класифікувати помилки логіки агента та зовнішні API/infrastructure errors.
-* Додати автоматичну перевірку `expected` проти `actual`.
-
-### Відомі обмеження
+Граф зупиняється тут; процес можна навіть завершити — стан збережеться в
+`agent_state.db`. Продовження відбувається через
+`app.invoke(Command(resume={...}), config=make_config(thread_id))` з тим
+самим `thread_id`, залежно від рішення людини:
+
+* **approve** — `book_hotel.invoke(original_args)` виконується без змін;
+  результат (з `Booking ID`) додається до `results`, `replanner` зазвичай
+  завершує задачу (`finish`).
+* **reject** — tool **не викликається**; замість цього в `results`
+  записується повідомлення про відмову (за наявності — з причиною
+  `reason`). `replanner` бачить, що ризикову дію скасовано, і завершує
+  виконання (`finish`), не намагаючись повторити `book_hotel`.
+* **edit** — людина передає нові `args` у `Command(resume=...)`;
+  `book_hotel.invoke(edited_args)` виконується з оновленими параметрами
+  (Pydantic-валідація `HotelBookingInput` спрацьовує повторно всередині
+  `tool.invoke()`).
+
+## 9. Аналіз результатів
+
+Нижче — спостереження з реальних запусків кожного сценарію (без
+редагування чи вигаданих цифр).
+
+**Plan-and-Execute.** У simple-прикладі planner коректно згенерував план з
+одного кроку і executor одразу обрав `calculate_trip_budget` з правильними
+аргументами (`{"travelers": 2, "days": 5, "daily_budget": 80}` → `€800.00`).
+У medium/complex-прикладах planner будує 2-3 кроки, а executor послідовно
+викликає `recommend_transport` → `estimate_hotel_cost` → `calculate_trip_budget`,
+не забігаючи наперед (одна дія за одну ітерацію).
+
+**Checkpointer.** Команда `start` зупинила workflow одразу після кроку 1
+(`recommend_transport`) через `checkpoint_pause`. У **новому** Python-процесі
+команда `resume` прочитала стан із `agent_state.db` (`current_step=1`, план і
+результати кроку 1 — незмінні) і продовжила виконання: `replanner` обрав
+`continue`, executor виконав кроки 2 і 3, а фінальний `results` містив усі
+три кроки в правильному порядку. Команда `threads` підтвердила ізоляцію:
+`checkpoint-session-001` містив повний стан, `checkpoint-session-002` (інший
+`thread_id`) — порожній `{}`.
+
+**Agentic RAG.** На запиті "порахуй бюджет" (без згадки довідкової
+інформації) агент викликав лише `calculate_trip_budget` і жодного разу не
+торкнувся `search_knowledge`. На запиті "що перевірити перед міжнародною
+подорожжю" — навпаки, викликав лише `search_knowledge` і повернув релевантні
+документи (`Travel documents`, `Travel insurance`, `Cabin baggage`). На
+комбінованому запиті ("порахуй бюджет і скажи, що перевірити") planner
+самостійно склав план із двох кроків і executor викликав обидва tools у
+правильному порядку. Вибір жодного разу не потребував додаткових підказок
+у коді — лише опис tools у промпті planner/executor.
+
+**HITL.** У approve-сценарії `book_hotel` виконався тільки після
+`Command(resume={"action": "approve"})` і повернув `Booking ID:
+DEMO-BOOKING-001`. У reject-сценарії `book_hotel` **не викликався** —
+`results` містив рядок "Ризикову дію відхилено користувачем. Причина:
+...", а `replanner` після цього одразу прийняв рішення `finish`, коректно
+розпізнавши, що повторювати відхилену дію не потрібно.
+
+## 10. Відомі обмеження
 
 * Tools використовують локальні правила та розрахунки замість реальних travel API.
-* `recommend_transport` базується на спрощених правилах.
+* `recommend_transport` базується на спрощених правилах відстані/пріоритету.
 * Робота агента залежить від доступності та квот Google Gemini API.
-* Час виконання може значно відрізнятися між окремими запусками.
-* Поточний evaluation set містить лише 4 тест-кейси.
-
-## 8. Структура файлів
-
-* `tools.py` — Pydantic-схеми, validators та tools.
-* `agent.py` — LangGraph граф, ReAct-цикл і structured output.
-* `safety.py` — `max_steps`, timeout та `LoopDetector`.
-* `logger.py` — `TrajectoryLogger`.
-* `test_runner.py` — тест-кейси та збір результатів.
-* `trajectory.json` — лог траєкторії виконання, генерується автоматично.
-* `test_results.json` — результати тестування, генеруються автоматично.
-* `requirements.txt` — залежності Python.
-* `README.md` — опис проєкту, інструкція запуску та аналіз результатів.
+* `search_knowledge` працює на невеликому, вручну підготовленому наборі документів.

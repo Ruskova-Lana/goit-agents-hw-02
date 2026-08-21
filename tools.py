@@ -1,5 +1,20 @@
+from typing import Annotated
+
 from langchain_core.tools import tool
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AfterValidator, BaseModel, Field, field_validator
+
+
+# ================================================================
+# Спільні валідатори
+# ================================================================
+
+def _validate_travelers_range(value: int) -> int:
+    if not 1 <= value <= 10:
+        raise ValueError("Кількість мандрівників повинна бути від 1 до 10.")
+    return value
+
+
+TravelersCount = Annotated[int, AfterValidator(_validate_travelers_range)]
 
 
 # ================================================================
@@ -9,7 +24,7 @@ from pydantic import BaseModel, Field, field_validator
 class TripBudgetInput(BaseModel):
     """Параметри для розрахунку бюджету подорожі."""
 
-    travelers: int = Field(
+    travelers: TravelersCount = Field(
         description="Кількість мандрівників. Допустиме значення: від 1 до 10."
     )
     days: int = Field(
@@ -18,13 +33,6 @@ class TripBudgetInput(BaseModel):
     daily_budget: float = Field(
         description="Щоденний бюджет на одну людину в євро."
     )
-
-    @field_validator("travelers")
-    @classmethod
-    def validate_travelers(cls, value: int) -> int:
-        if not 1 <= value <= 10:
-            raise ValueError("Кількість мандрівників повинна бути від 1 до 10.")
-        return value
 
     @field_validator("days")
     @classmethod
@@ -149,7 +157,7 @@ class TransportInput(BaseModel):
     distance_km: float = Field(
         description="Відстань між пунктами подорожі у кілометрах."
     )
-    travelers: int = Field(
+    travelers: TravelersCount = Field(
         default=1,
         description="Кількість мандрівників. Допустиме значення: від 1 до 10."
     )
@@ -165,13 +173,6 @@ class TransportInput(BaseModel):
             raise ValueError("Відстань повинна бути більшою за 0.")
         if value > 20000:
             raise ValueError("Відстань не може перевищувати 20000 км.")
-        return value
-
-    @field_validator("travelers")
-    @classmethod
-    def validate_travelers(cls, value: int) -> int:
-        if not 1 <= value <= 10:
-            raise ValueError("Кількість мандрівників повинна бути від 1 до 10.")
         return value
 
     @field_validator("priority")
